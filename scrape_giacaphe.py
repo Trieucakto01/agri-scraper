@@ -286,8 +286,8 @@ def ocr_bang_gia(img_bytes: bytes) -> list[dict]:
 
     return parse_lines_to_records(merged_lines)
 
-def send_onesignal_notification(records: list[dict]):
-    """Gửi thông báo OneSignal với giá nông sản"""
+def send_onesignal_notification(records: list[dict], inserted: int = 0, updated: int = 0):
+    """Gửi thông báo OneSignal sau mỗi lần cập nhật thành công."""
     if not ONESIGNAL_APP_ID or not ONESIGNAL_REST_API_KEY:
         log.warning("⚠️  OneSignal không được cấu hình, bỏ qua thông báo")
         return
@@ -295,18 +295,27 @@ def send_onesignal_notification(records: list[dict]):
     if not records:
         return
     
-    # Lọc chỉ các sản phẩm có biến động (thay_doi != 0)
+    # Lọc các sản phẩm có biến động (thay_doi != 0)
     changed_records = [r for r in records if r.get('thay_doi', 0) != 0]
-    
-    # Nếu không có biến động, vẫn hiển thị top 3 giá hiện tại
+
+    today_label = datetime.now().strftime("%d/%m")
+
+    # Có biến động: ưu tiên show các dòng thay đổi mạnh nhất.
     if not changed_records:
-        log.info("ℹ️  Không có biến động giá → Gửi thông báo giá hiện tại")
+        log.info("ℹ️  Chưa có biến động giá lớn → Gửi bản tin giá trong ngày")
         display_records = sorted(records, key=lambda x: x['gia_trung_binh'], reverse=True)[:3]
-        message_lines = ["📊 Giá nông sản hôm nay:"]
+        heading = f"Bản tin giá nông sản {today_label}"
+        message_lines = ["Giá đã cập nhật, mời bạn xem nhanh:"]
     else:
-        # Sort theo độ biến động giảm dần
+        # Sort theo độ biến động giảm dần.
         display_records = sorted(changed_records, key=lambda x: abs(x.get('thay_doi', 0)), reverse=True)[:5]
-        message_lines = ["📈 Báo giá nông sản có biến động:"]
+        top = display_records[0]
+        top_delta = int(top.get('thay_doi', 0))
+        top_sign = "+" if top_delta > 0 else ""
+        heading = f"Nóng: {top['thi_truong']} {top_sign}{top_delta:,}".replace(',', '.')
+        message_lines = ["Giá vừa cập nhật, điểm qua thị trường nổi bật:"]
+
+    message_lines.append(f"{inserted} mới | {updated} cập nhật")
     
     for rec in display_records:
         thi_truong = rec['thi_truong']
@@ -326,12 +335,14 @@ def send_onesignal_notification(records: list[dict]):
     payload = {
         "app_id": ONESIGNAL_APP_ID,
         "included_segments": ["All"],  # Gửi cho tất cả người dùng đã subscribe
-        "headings": {"en": "Giá Nông Sản Mới"},
-        "contents": {"en": message},
+        "headings": {"en": heading, "vi": heading},
+        "contents": {"en": message, "vi": message},
         "url": "https://agriht.com/gia-nong-san/",
         "data": {
             "type": "price_update",
-            "count": len(records)
+            "count": len(records),
+            "inserted": inserted,
+            "updated": updated,
         }
     }
     
@@ -434,12 +445,9 @@ def post_to_mysql(records: list[dict]):
         log.info("  - Inserted: %d", inserted)
         log.info("  - Updated: %d", updated)
         
-        # Chỉ gửi thông báo OneSignal khi có dữ liệu mới hoặc cập nhật
-        if inserted > 0 or updated > 0:
-            log.info("📢 Có %d dữ liệu mới/cập nhật → Gửi thông báo...", inserted + updated)
-            send_onesignal_notification(records)
-        else:
-            log.info("ℹ️  Không có dữ liệu mới/cập nhật → Bỏ qua thông báo")
+        # Luôn gửi bản tin hằng ngày sau khi cập nhật thành công.
+        log.info("📢 Gửi bản tin hằng ngày (inserted=%d, updated=%d)", inserted, updated)
+        send_onesignal_notification(records, inserted=inserted, updated=updated)
             
     except mysql.connector.Error as e:
         log.error("❌ MySQL Error: %s", e)
@@ -510,12 +518,9 @@ def post_to_php(records: list[dict]):
             if result.get("errors"):
                 log.warning("  - Errors: %s", result["errors"])
             
-            # Chỉ gửi thông báo OneSignal khi có dữ liệu mới hoặc cập nhật
-            if inserted > 0 or updated > 0:
-                log.info("📢 Có %d dữ liệu mới/cập nhật → Gửi thông báo...", inserted + updated)
-                send_onesignal_notification(records)
-            else:
-                log.info("ℹ️  Không có dữ liệu mới/cập nhật → Bỏ qua thông báo")
+            # Luôn gửi bản tin hằng ngày sau khi cập nhật thành công.
+            log.info("📢 Gửi bản tin hằng ngày (inserted=%d, updated=%d)", inserted, updated)
+            send_onesignal_notification(records, inserted=inserted, updated=updated)
         elif response.status_code == 401:
             log.error("❌ Unauthorized - SECRET_KEY không đúng!")
             raise SystemExit(1)
