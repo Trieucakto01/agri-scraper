@@ -1,0 +1,41 @@
+name: Scrape Giá Cà Phê Hàng Ngày
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 8:00 sáng GMT+7 = 1:00 UTC
+  workflow_dispatch:        # Cho phép chạy thủ công từ GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Cài thư viện
+        run: pip install playwright requests
+
+      - name: Cài Chromium
+        run: playwright install chromium --with-deps
+
+      - name: Chạy scraper
+        env:
+          PHP_ENDPOINT: ${{ secrets.PHP_ENDPOINT }}
+          SECRET_KEY:   ${{ secrets.SECRET_KEY }}
+        run: python scrape_giacaphe.py
+
+      - name: Upload ảnh chụp màn hình (để debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-${{ github.run_id }}
+          path: screenshot.png
+          retention-days: 7

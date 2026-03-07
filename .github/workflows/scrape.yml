@@ -1,0 +1,60 @@
+name: Cập Nhật Giá Nông Sản
+
+on:
+  # Chạy tự động hằng ngày lúc 7h sáng (giờ Việt Nam)
+  schedule:
+    - cron: '0 0 * * *'  # 00:00 UTC = 7:00 sáng giờ Việt Nam (UTC+7)
+  
+  # Cho phép chạy thủ công
+  workflow_dispatch:
+  
+  # Chạy mỗi khi push vào main (để test)
+  push:
+    branches:
+      - main
+    paths:
+      - 'scrape_giacaphe.py'
+      - 'update_gianongsan.py'
+      - '.github/workflows/scrape.yml'
+
+jobs:
+  scrape-and-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-vie
+          playwright install --with-deps chromium
+      
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          PHP_ENDPOINT: ${{ secrets.PHP_ENDPOINT }}
+          ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
+          ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
+        run: |
+          python update_gianongsan.py
+      
+      - name: Upload screenshot artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-${{ github.run_number }}
+          path: screenshot_table.png
+          retention-days: 7
