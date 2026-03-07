@@ -279,19 +279,30 @@ def send_onesignal_notification(records: list[dict]):
     if not records:
         return
     
-    # Format message với top 5 sản phẩm có thay đổi
-    sorted_records = sorted(records, key=lambda x: abs(x.get('thay_doi', 0)), reverse=True)
-    top_records = sorted_records[:5]
+    # Lọc chỉ các sản phẩm có biến động (thay_doi != 0)
+    changed_records = [r for r in records if r.get('thay_doi', 0) != 0]
     
-    message_lines = ["Giá nông sản hôm nay có sự biến động như sau:"]
-    for rec in top_records:
+    # Nếu không có biến động, vẫn hiển thị top 3 giá hiện tại
+    if not changed_records:
+        log.info("ℹ️  Không có biến động giá → Gửi thông báo giá hiện tại")
+        display_records = sorted(records, key=lambda x: x['gia_trung_binh'], reverse=True)[:3]
+        message_lines = ["📊 Giá nông sản hôm nay:"]
+    else:
+        # Sort theo độ biến động giảm dần
+        display_records = sorted(changed_records, key=lambda x: abs(x.get('thay_doi', 0)), reverse=True)[:5]
+        message_lines = ["📈 Báo giá nông sản có biến động:"]
+    
+    for rec in display_records:
         thi_truong = rec['thi_truong']
         gia = rec['gia_trung_binh']
         thay_doi = rec['thay_doi']
         # Format: Đắk Lắk 96,000 +1,200 (dùng dấu phẩy như user yêu cầu)
-        gia_str = f"{int(gia):,}"
-        thay_doi_str = f"{int(thay_doi):+,}" if thay_doi != 0 else "--"
-        message_lines.append(f"{thi_truong} {gia_str} {thay_doi_str}")
+        gia_str = f"{int(gia):,}".replace(',', '.')  # 96.000 theo format VN
+        if thay_doi != 0:
+            thay_doi_str = f" ({int(thay_doi):+,})".replace(',', '.')
+        else:
+            thay_doi_str = ""
+        message_lines.append(f"• {thi_truong}: {gia_str} đ{thay_doi_str}")
     
     message = "\n".join(message_lines)
     
@@ -363,8 +374,12 @@ def post_to_php(records: list[dict]):
             if result.get("errors"):
                 log.warning("  - Errors: %s", result["errors"])
             
-            # Gửi thông báo OneSignal sau khi cập nhật thành công
-            send_onesignal_notification(records)
+            # Chỉ gửi thông báo OneSignal khi có dữ liệu mới hoặc cập nhật
+            if inserted > 0 or updated > 0:
+                log.info("📢 Có %d dữ liệu mới/cập nhật → Gửi thông báo...", inserted + updated)
+                send_onesignal_notification(records)
+            else:
+                log.info("ℹ️  Không có dữ liệu mới/cập nhật → Bỏ qua thông báo")
         elif response.status_code == 401:
             log.error("❌ Unauthorized - SECRET_KEY không đúng!")
             raise SystemExit(1)
