@@ -305,7 +305,7 @@ def send_onesignal_notification(records: list[dict], inserted: int = 0, updated:
         log.info("ℹ️  Chưa có biến động giá lớn → Gửi bản tin giá trong ngày")
         display_records = sorted(records, key=lambda x: x['gia_trung_binh'], reverse=True)[:3]
         heading = f"Bản tin giá nông sản {today_label}"
-        message_lines = ["Giá đã cập nhật, mời bạn xem nhanh:"]
+        message_lines = ["🌾 Giá cả nông sản mới nhất cập nhập hôm nay như sau:"]
     else:
         # Sort theo độ biến động giảm dần.
         display_records = sorted(changed_records, key=lambda x: abs(x.get('thay_doi', 0)), reverse=True)[:5]
@@ -313,9 +313,9 @@ def send_onesignal_notification(records: list[dict], inserted: int = 0, updated:
         top_delta = int(top.get('thay_doi', 0))
         top_sign = "+" if top_delta > 0 else ""
         heading = f"Nóng: {top['thi_truong']} {top_sign}{top_delta:,}".replace(',', '.')
-        message_lines = ["Giá vừa cập nhật, điểm qua thị trường nổi bật:"]
+        message_lines = ["🌾 Giá cả nông sản mới nhất cập nhập hôm nay như sau:"]
 
-    message_lines.append(f"{inserted} mới | {updated} cập nhật")
+    message_lines.append(f"🆕 {inserted} mới | 🔄 {updated} cập nhật")
     
     for rec in display_records:
         thi_truong = rec['thi_truong']
@@ -323,11 +323,13 @@ def send_onesignal_notification(records: list[dict], inserted: int = 0, updated:
         thay_doi = rec['thay_doi']
         # Format: Đắk Lắk 96,000 +1,200 (dùng dấu phẩy như user yêu cầu)
         gia_str = f"{int(gia):,}".replace(',', '.')  # 96.000 theo format VN
-        if thay_doi != 0:
-            thay_doi_str = f" ({int(thay_doi):+,})".replace(',', '.')
+        if thay_doi > 0:
+            thay_doi_str = f" 🟢 +{abs(int(thay_doi)):,}".replace(',', '.')
+        elif thay_doi < 0:
+            thay_doi_str = f" 🔴 -{abs(int(thay_doi)):,}".replace(',', '.')
         else:
-            thay_doi_str = ""
-        message_lines.append(f"• {thi_truong}: {gia_str} đ{thay_doi_str}")
+            thay_doi_str = " ⚪ 0"
+        message_lines.append(f"📍 {thi_truong}: {gia_str} đ | {thay_doi_str}")
     
     message = "\n".join(message_lines)
     
