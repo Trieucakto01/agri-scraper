@@ -36,12 +36,12 @@ SECRET_KEY   = os.environ.get("SECRET_KEY", "ditmecuocdoi")
 # MySQL Configuration
 DB_CONFIG = {
     "host":     os.environ.get("DB_HOST", "srv1631.hstgr.io"),
-    "port":     int(os.environ.get("DB_PORT", "3306")),
+    "port":     int(os.environ.get("DB_PORT") or "3306"),
     "database": os.environ.get("DB_NAME", "u697673786_Agriht"),
     "user":     os.environ.get("DB_USER", "u697673786_Agriht"),
     "password": os.environ.get("DB_PASSWORD", ""),
     "charset":  "utf8mb4",
-    "connection_timeout": int(os.environ.get("DB_TIMEOUT", "12")),
+    "connection_timeout": int(os.environ.get("DB_TIMEOUT") or "12"),
     "autocommit": True,
 }
 
