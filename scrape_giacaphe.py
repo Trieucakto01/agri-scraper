@@ -19,15 +19,31 @@ from playwright.sync_api import sync_playwright
 from PIL import Image
 import pytesseract
 import io
+from decimal import Decimal
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
 URL_SCRAPE = "https://giacaphe.com/gia-ca-phe-noi-dia/"
 
+# Database Connection Mode
+USE_MYSQL_DIRECT = os.environ.get("USE_MYSQL_DIRECT", "true").lower() == "true"
+
 # PHP API Configuration
 PHP_ENDPOINT = os.environ.get("PHP_ENDPOINT", "https://agriht.com/gianongsan1.php")
 SECRET_KEY   = os.environ.get("SECRET_KEY", "ditmecuocdoi")
+
+# MySQL Configuration
+DB_CONFIG = {
+    "host":     os.environ.get("DB_HOST", "srv1631.hstgr.io"),
+    "port":     int(os.environ.get("DB_PORT", "3306")),
+    "database": os.environ.get("DB_NAME", "u697673786_Agriht"),
+    "user":     os.environ.get("DB_USER", "u697673786_Agriht"),
+    "password": os.environ.get("DB_PASSWORD", ""),
+    "charset":  "utf8mb4",
+    "connection_timeout": int(os.environ.get("DB_TIMEOUT", "12")),
+    "autocommit": True,
+}
 
 # OneSignal Configuration
 ONESIGNAL_APP_ID = os.environ.get("ONESIGNAL_APP_ID", "")
@@ -342,6 +358,98 @@ def send_onesignal_notification(records: list[dict]):
     except Exception as e:
         log.warning("⚠️  Lỗi gửi OneSignal: %s", e)
 
+def post_to_mysql(records: list[dict]):
+    """POST dữ liệu trực tiếp vào MySQL database (bypass CAPTCHA)"""
+    if not records:
+        log.warning("Không có dữ liệu để lưu!")
+        return
+    
+    try:
+        import mysql.connector
+    except ImportError:
+        log.error("❌ Cần cài đặt: pip install mysql-connector-python")
+        raise SystemExit(1)
+    
+    log.info("📊 MySQL Direct Mode: %s", DB_CONFIG["host"])
+    log.info("🔑 Database: %s", DB_CONFIG["database"])
+    log.info("📤 Payload: %d records", len(records))
+    
+    try:
+        log.info("Đang kết nối MySQL...")
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        log.info("✅ Kết nối thành công!")
+        
+        # Create table if not exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS gia_nong_san (
+                id              INT AUTO_INCREMENT PRIMARY KEY,
+                ngay_cap_nhat   DATE          NOT NULL,
+                san_pham        VARCHAR(50)   NOT NULL,
+                thi_truong      VARCHAR(100)  NOT NULL,
+                gia_trung_binh  DECIMAL(15,2) DEFAULT 0,
+                thay_doi        DECIMAL(10,2) DEFAULT 0,
+                ty_gia_usd_vnd  DECIMAL(15,2) DEFAULT 0,
+                cap_nhat_luc    TIME,
+                UNIQUE KEY uq_ngay_sp_tt (ngay_cap_nhat, san_pham, thi_truong)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        
+        sql = """
+            INSERT INTO gia_nong_san
+            (ngay_cap_nhat, san_pham, thi_truong, gia_trung_binh, thay_doi, ty_gia_usd_vnd, cap_nhat_luc)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            gia_trung_binh = VALUES(gia_trung_binh),
+            thay_doi = VALUES(thay_doi),
+            ty_gia_usd_vnd = VALUES(ty_gia_usd_vnd),
+            cap_nhat_luc = VALUES(cap_nhat_luc)
+        """
+        
+        inserted = 0
+        updated = 0
+        
+        for record in records:
+            cursor.execute(sql, (
+                record['ngay_cap_nhat'],
+                record['san_pham'],
+                record['thi_truong'],
+                Decimal(str(record['gia_trung_binh'])),
+                Decimal(str(record['thay_doi'])),
+                Decimal(str(record['ty_gia_usd_vnd'])),
+                record['cap_nhat_luc']
+            ))
+            
+            if cursor.rowcount == 1:
+                inserted += 1
+            elif cursor.rowcount == 2:
+                updated += 1
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        log.info("✅ Hoàn thành!")
+        log.info("  - Inserted: %d", inserted)
+        log.info("  - Updated: %d", updated)
+        
+        # Chỉ gửi thông báo OneSignal khi có dữ liệu mới hoặc cập nhật
+        if inserted > 0 or updated > 0:
+            log.info("📢 Có %d dữ liệu mới/cập nhật → Gửi thông báo...", inserted + updated)
+            send_onesignal_notification(records)
+        else:
+            log.info("ℹ️  Không có dữ liệu mới/cập nhật → Bỏ qua thông báo")
+            
+    except mysql.connector.Error as e:
+        log.error("❌ MySQL Error: %s", e)
+        if e.errno == 2003:
+            log.error("💡 Troubleshoot: Cần whitelist IP tại Hostinger → Remote MySQL")
+        raise SystemExit(1)
+    except Exception as e:
+        log.error("❌ Lỗi: %s", e)
+        raise SystemExit(1)
+
 def post_to_php(records: list[dict]):
     """POST dữ liệu tới PHP endpoint với SECRET_KEY"""
     if not records:
@@ -350,6 +458,12 @@ def post_to_php(records: list[dict]):
     
     log.info("📡 POST tới: %s", PHP_ENDPOINT)
     log.info("🔑 Secret Key: %s", SECRET_KEY[:5] + "***")
+    log.info("📤 Payload: %d records", len(records))
+    
+    # Debug: log payload đầu tiên
+    if records:
+        import json
+        log.info("📤 Sample record: %s", json.dumps(records[0], ensure_ascii=False))
     
     try:
         response = requests.post(
@@ -357,13 +471,35 @@ def post_to_php(records: list[dict]):
             json=records,
             headers={
                 "Content-Type": "application/json",
-                "X-Secret-Key": SECRET_KEY
+                "X-Secret-Key": SECRET_KEY,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Referer": "https://agriht.com/",
+                "Origin": "https://agriht.com"
             },
             timeout=30
         )
         
+        log.info("📥 Response status: %d", response.status_code)
+        log.info("📥 Response content-type: %s", response.headers.get('Content-Type', 'unknown'))
+        log.info("📥 Response text (first 500 chars): %s", response.text[:500])
+        
         if response.status_code == 200:
-            result = response.json()
+            # Kiểm tra xem response có phải JSON không
+            content_type = response.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                log.error("❌ Response không phải JSON! Content-Type: %s", content_type)
+                log.error("❌ Response body: %s", response.text[:1000])
+                raise SystemExit(1)
+            
+            try:
+                result = response.json()
+            except ValueError as e:
+                log.error("❌ Không thể parse JSON response: %s", e)
+                log.error("❌ Response text: %s", response.text[:1000])
+                raise SystemExit(1)
+            
             inserted = result.get("inserted", 0)
             updated = result.get("updated", 0)
             
@@ -391,7 +527,20 @@ def post_to_php(records: list[dict]):
         log.error("❌ Lỗi kết nối: %s", e)
         raise SystemExit(1)
 
+def post_records(records: list[dict]):
+    """
+    Wrapper function to post records using configured method:
+    - MySQL direct (bypass CAPTCHA) if USE_MYSQL_DIRECT=true
+    - PHP API endpoint if USE_MYSQL_DIRECT=false
+    """
+    if USE_MYSQL_DIRECT:
+        log.info("🚀 Mode: MySQL Direct Connection (Bypass CAPTCHA)")
+        post_to_mysql(records)
+    else:
+        log.info("🚀 Mode: PHP API Endpoint")
+        post_to_php(records)
+
 if __name__ == "__main__":
     img = chup_bang_gia()
     records = ocr_bang_gia(img)
-    post_to_php(records)
+    post_records(records)

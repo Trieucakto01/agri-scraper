@@ -12,7 +12,7 @@ load_dotenv()
 
 import sys
 import logging
-from scrape_giacaphe import chup_bang_gia, ocr_bang_gia, post_to_php
+from scrape_giacaphe import chup_bang_gia, ocr_bang_gia, post_records
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -46,9 +46,9 @@ def main():
         
         log.info("✅ Đã parse được %d bản ghi", len(records))
         
-        # Bước 3: POST tới PHP endpoint
-        log.info("\n[3/3] Đang POST dữ liệu tới PHP endpoint...")
-        post_to_php(records)
+        # Bước 3: POST tới database
+        log.info("\n[3/3] Đang lưu dữ liệu...")
+        post_records(records)
         
         log.info("\n" + "=" * 60)
         log.info("✅ HOÀN THÀNH CẬP NHẬT")

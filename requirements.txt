@@ -3,3 +3,4 @@ requests
 pillow
 pytesseract
 python-dotenv
+mysql-connector-python
