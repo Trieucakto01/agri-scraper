@@ -509,6 +509,16 @@ def post_to_php(records: list[dict]):
                 log.error("❌ Không thể parse JSON response: %s", e)
                 log.error("❌ Response text: %s", response.text[:1000])
                 raise SystemExit(1)
+
+            # Validate schema của API ghi dữ liệu.
+            # Endpoint đúng phải trả về inserted/updated/errors.
+            if not isinstance(result, dict) or ("inserted" not in result or "updated" not in result):
+                keys = list(result.keys())[:10] if isinstance(result, dict) else []
+                log.error("❌ Endpoint không phải API ghi dữ liệu (missing inserted/updated)")
+                if keys:
+                    log.error("❌ Response keys hiện tại: %s", keys)
+                log.error("❌ Hãy kiểm tra lại PHP_ENDPOINT hoặc upload đúng file gianongsan1.php")
+                raise SystemExit(1)
             
             inserted = result.get("inserted", 0)
             updated = result.get("updated", 0)
