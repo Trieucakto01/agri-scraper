@@ -47,8 +47,18 @@ jobs:
 
       - name: Run scraper
         env:
+          # PHP API (legacy/fallback)
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           PHP_ENDPOINT: ${{ secrets.PHP_ENDPOINT }}
+          # MySQL Direct (recommended to bypass CAPTCHA)
+          USE_MYSQL_DIRECT: ${{ secrets.USE_MYSQL_DIRECT }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_TIMEOUT: ${{ secrets.DB_TIMEOUT }}
+          # OneSignal Push Notifications
           ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
           ONESIGNAL_REST_API_KEY: ${{ secrets.ONESIGNAL_REST_API_KEY }}
         run: |
