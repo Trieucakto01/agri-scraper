@@ -35,12 +35,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr tesseract-ocr-vie
-          playwright install --with-deps chromium
       
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+      
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install --with-deps chromium
 
       - name: Run scraper
         env:
