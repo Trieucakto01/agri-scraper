@@ -1,9 +1,9 @@
 name: Cập Nhật Giá Nông Sản
 
 on:
-  # Chạy tự động hằng ngày lúc 10h30 sáng (giờ Việt Nam)
+  # Chạy tự động hằng ngày lúc 11h00 sáng (giờ Việt Nam)
   schedule:
-    - cron: '30 3 * * *'  # 03:30 UTC = 10:30 sáng giờ Việt Nam (UTC+7)
+    - cron: '0 4 * * *'  # 04:00 UTC = 11:00 sáng giờ Việt Nam (UTC+7)
   
   # Cho phép chạy thủ công
   workflow_dispatch:
